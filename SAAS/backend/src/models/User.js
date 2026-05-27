@@ -1,21 +1,25 @@
-import mongoose from mongoose
+import mongoose from "mongoose";
 
-const userSchema = new mongoose.Schema({
-    company_id:{
-        type:String,
-        ref:"company",
-        required:true
+const userSchema = new mongoose.Schema(
+  {
+    company_id: {
+      type: mongoose.Schema.Types.ObjectId, // ✅ Fixed: was String, must be ObjectId to ref Company
+      ref: "Company",
+      required: true,
     },
 
     name: {
       type: String,
       required: true,
+      trim: true,
     },
 
     email: {
       type: String,
       required: true,
       unique: true,
+      lowercase: true,   // Always store emails in lowercase
+      trim: true,
       match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Please provide a valid email"],
     },
 
@@ -34,6 +38,20 @@ const userSchema = new mongoose.Schema({
       type: Boolean,
       default: true,
     },
-},{timestamps: true});
+
+    // Added: track last login time — useful for admin audits and security
+    last_login_at: {
+      type: Date,
+      default: null,
+    },
+
+    // Added: refresh token stored for token rotation / logout invalidation
+    refresh_token: {
+      type: String,
+      default: null,
+    },
+  },
+  { timestamps: true }
+);
 
 export default mongoose.model("User", userSchema);
