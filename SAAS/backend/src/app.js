@@ -3,55 +3,85 @@
  * ---------
  * Express application setup and middleware configuration.
  * This module creates and configures the Express app instance,
- * registers all global middleware, defines base routes, and
+ * registers all global middleware, mounts all routes, and
  * exports the app for use by the server entry point (server.js).
  */
 
-import express from 'express'
-import cors from 'cors'
-import helmet from 'helmet'
-import compression from 'compression'
-import cookieParser from 'cookie-parser'
-import morgan from 'morgan'
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import compression from "compression";
+import cookieParser from "cookie-parser";
+import morgan from "morgan";
+
+// ─── Route Imports ────────────────────────────────────────────────────────────
+// ADMIN routes (JWT protected)
+import authRoutes from "./api/admin/routes/authRoutes.js";
+
+// ─── Error Middleware ─────────────────────────────────────────────────────────
+// Must be imported and used LAST — after all routes
+import errorMiddleware from "./api/admin/middlewares/errorMiddleware.js";
 
 // Initialize the Express application
 const app = express();
 
-// ─── Middleware ───────────────────────────────────────────────────────────────
+// ─── Global Middleware ────────────────────────────────────────────────────────
 
-// Parse incoming requests with JSON payloads (Content-Type: application/json)
+// Parse incoming JSON request bodies
 app.use(express.json());
 
-// Enable Cross-Origin Resource Sharing (CORS) to allow requests from other origins
+// Enable CORS — allow frontend origins to call this backend
 app.use(cors());
 
-// Set security-related HTTP response headers to protect against common web vulnerabilities
+// Set secure HTTP response headers (XSS, clickjacking, MIME sniffing, etc.)
 app.use(helmet());
 
-// Compress response bodies to improve transfer speed and reduce bandwidth usage
+// Gzip compress responses — reduces payload size for faster transfers
 app.use(compression());
 
-// Parse Cookie header and populate req.cookies with cookie name-value pairs
+// Parse cookies from incoming requests (needed for httpOnly refresh token)
 app.use(cookieParser());
 
-// Log HTTP requests to the console in developer-friendly format
+// Log every HTTP request to terminal in dev-friendly format
 app.use(morgan("dev"));
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-
-/**
- * GET /health
- * Health check endpoint used to verify that the server is up and running.
- * Typically consumed by load balancers, monitoring tools, or CI/CD pipelines.
- */
-app.get('/health', (req, res) => {
-    res.json({
-        success: true,
-        message: "Server running"
-    });
+// ─── Health Check ─────────────────────────────────────────────────────────────
+// Used by load balancers / monitoring tools to verify server is alive
+app.get("/health", (req, res) => {
+  res.json({
+    success: true,
+    message: "Server is running",
+    timestamp: new Date().toISOString(),
+  });
 });
 
-// ─── Export ───────────────────────────────────────────────────────────────────
+// ─── PUBLIC Routes (NO JWT) ───────────────────────────────────────────────────
+// Customer-facing APIs — anyone with a machine_id can call these
+// Will be wired here in Day 6 when public catalog controller is built:
+// import catalogRoutes from "./api/public/routes/catalogRoutes.js";
+// app.use("/api/public/catalog", catalogRoutes);
 
-// Export the configured Express app for use in server.js (entry point)
+// ─── ADMIN Routes (JWT REQUIRED) ──────────────────────────────────────────────
+// These are not protected here directly — protection is per-route via authMiddleware
+app.use("/api/admin/auth", authRoutes);
+
+// More admin routes will be added here in Week 3+:
+// import userRoutes   from "./api/admin/routes/userRoutes.js";
+// import deviceRoutes from "./api/admin/routes/deviceRoutes.js";
+// app.use("/api/admin/users",   authMiddleware, tenantMiddleware, userRoutes);
+// app.use("/api/admin/devices", authMiddleware, tenantMiddleware, deviceRoutes);
+
+// ─── 404 Handler ─────────────────────────────────────────────────────────────
+// Catches any request that didn't match a route above
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.path} not found`,
+  });
+});
+
+// ─── Global Error Middleware ──────────────────────────────────────────────────
+// MUST be last — catches errors passed via next(error) from any controller
+app.use(errorMiddleware);
+
 export default app;
