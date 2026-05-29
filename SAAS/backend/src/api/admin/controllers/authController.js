@@ -1,4 +1,4 @@
-import { loginUser, registerUser } from "../../../services/authService.js";
+import { loginUser, registerUser, refreshTokenService, logoutUser } from "../../../services/authService.js";
 import ApiError from "../../../utils/ApiError.js";
 
 // ─── POST /api/admin/auth/register ────────────────────────────────────────────
@@ -53,6 +53,53 @@ export const login = async (req, res, next) => {
       message:     "Login successful",
       accessToken, // Access token goes in response body — frontend stores in memory
       user,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─── POST /api/admin/auth/refresh ────────────────────────────────────────────
+export const refresh = async (req, res, next) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+    const tokens = await refreshTokenService(refreshToken);
+
+    // Rotate the cookie with the new refresh token
+    res.cookie("refreshToken", tokens.refreshToken, {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      maxAge:   7 * 24 * 60 * 60 * 1000, // 7 days in ms
+    });
+
+    res.json({
+      success:     true,
+      accessToken: tokens.accessToken,
+    });
+  } catch (error) {
+    // Delegate to global error middleware — same as register and login
+    next(error);
+  }
+};
+
+// ─── POST /api/admin/auth/logout ────────────────────────────────────────────
+// Protected — requires authMiddleware (user must be authenticated to logout)
+export const logout = async (req, res, next) => {
+  try {
+    // req.user is set by authMiddleware — contains user_id from verified JWT
+    await logoutUser(req.user.user_id);
+
+    // Clear the httpOnly cookie on the client side
+    res.clearCookie("refreshToken", {
+      httpOnly: true,
+      secure:   process.env.NODE_ENV === "production",
+      sameSite: "strict",
+    });
+
+    res.json({
+      success: true,
+      message: "Logged out successfully",
     });
   } catch (error) {
     next(error);

@@ -5,6 +5,7 @@ import ApiError from "../../../utils/ApiError.js";
 // Verifies the JWT access token on every protected admin route.
 // Attaches decoded payload (user_id, company_id, role) to req.user.
 export const authMiddleware = (req, res, next) => {
+  
   try {
     // Token must be in Authorization header as: "Bearer <token>"
     const authHeader = req.headers.authorization;

@@ -3,10 +3,11 @@ import User from "../models/User.js";
 import { generateAccessToken, generateRefreshToken } from "../utils/jwt.js";
 import ApiError from "../utils/ApiError.js";
 import logger from "../utils/logger.js";
+import jwt from "jsonwebtoken";
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 export const loginUser = async ({ email, password }) => {
-  // ✅ Fixed: was User.find() which returns array — must use findOne()
+  // Fixed: was User.find() which returns array — must use findOne()
   const user = await User.findOne({ email });
 
   if (!user) {
@@ -19,12 +20,12 @@ export const loginUser = async ({ email, password }) => {
     throw ApiError.forbidden("Your account has been deactivated. Contact your admin.");
   }
 
-  // ✅ Fixed: was loginUser(email, password) called with req.body object
+  // Fixed: was loginUser(email, password) called with req.body object
   // Now destructures correctly from the single object argument
   const isMatch = await bcrypt.compare(password, user.password_hash);
 
   if (!isMatch) {
-    logger.warn({ email }, "⚠️ Failed login attempt");
+    logger.warn({ email }, "Failed login attempt");
     throw ApiError.unauthorized("Invalid credentials");
   }
 
@@ -42,9 +43,9 @@ export const loginUser = async ({ email, password }) => {
   user.last_login_at  = new Date();
   await user.save();
 
-  logger.info({ user_id: user._id, role: user.role }, "✅ User logged in");
+  logger.info({ user_id: user._id, role: user.role }, "User logged in");
 
-  // ✅ Security: strip sensitive fields before returning
+  // Security: strip sensitive fields before returning
   const safeUser = {
     _id:        user._id,
     name:       user.name,
@@ -75,9 +76,9 @@ export const registerUser = async ({ company_id, name, email, password, role }) 
     role,
   });
 
-  logger.info({ user_id: user._id, role }, "✅ New user registered");
+  logger.info({ user_id: user._id, role }, "New user registered");
 
-  // ✅ Security: never return password_hash in any response
+  //  Security: never return password_hash in any response
   const safeUser = {
     _id:        user._id,
     name:       user.name,
@@ -87,6 +88,61 @@ export const registerUser = async ({ company_id, name, email, password, role }) 
     is_active:  user.is_active,
     createdAt:  user.createdAt,
   };
-
+  
   return safeUser;
+};
+
+export const refreshTokenService = async(refreshToken) => {
+
+  if(!refreshToken){
+    throw ApiError.unauthorized("Refresh token is required");
+  }
+  let decoded;
+  try {
+    decoded = jwt.verify(refreshToken,process.env.JWT_REFRESH_SECRET);
+  } catch (error) {
+    throw ApiError.unauthorized("Invalid refresh token");
+  }
+
+  const user = await User.findById(decoded.user_id);
+  if (!user || user.refresh_token !== refreshToken) {
+    throw ApiError.unauthorized("Invalid refresh token");
+  }
+
+  // Guard: deactivated users must not receive new tokens — same check as login
+  if (!user.is_active) {
+    throw ApiError.forbidden("Your account has been deactivated. Contact your admin.");
+  }
+
+  const payload = {
+    user_id : user._id,
+    company_id : user.company_id,
+    role : user.role
+  };
+
+  const newAccessToken = generateAccessToken(payload);
+  const newRefreshToken = generateRefreshToken(payload);
+
+  user.refresh_token = newRefreshToken;
+  await user.save();
+
+  logger.info({ user_id: user._id }, "Access token refreshed");
+
+  return { accessToken: newAccessToken, refreshToken: newRefreshToken };
+};
+
+// ─── Logout ───────────────────────────────────────────────────────────────────
+export const logoutUser = async (userId) => {
+  const user = await User.findById(userId);
+
+  if (!user) {
+    // Fail silently — if the user doesn't exist, logout intent is already satisfied
+    return;
+  }
+
+  // Invalidate the refresh token in DB so the cookie becomes useless
+  user.refresh_token = null;
+  await user.save();
+
+  logger.info({ user_id: userId }, "User logged out");
 };

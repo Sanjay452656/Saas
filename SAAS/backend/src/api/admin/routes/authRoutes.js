@@ -1,5 +1,6 @@
 import express from "express";
-import { register, login } from "../controllers/authController.js";
+import { register, login, refresh, logout } from "../controllers/authController.js";
+import { authMiddleware } from "../middlewares/authMiddleware.js";
 import rateLimit from "express-rate-limit";
 
 // ─── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -22,5 +23,11 @@ router.post("/register", authLimiter, register);
 
 // POST /api/admin/auth/login
 router.post("/login", authLimiter, login);
+
+// POST /api/admin/auth/refresh
+router.post("/refresh", refresh);
+
+// POST /api/admin/auth/logout  (protected — valid access token required)
+router.post("/logout", authMiddleware, logout);
 
 export default router;
